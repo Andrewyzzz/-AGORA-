@@ -1,0 +1,9 @@
+{
+  "network": "base-sepolia",
+  "chain_id": 84532,
+  "MockCollateral": "",
+  "MarketFactory": "",
+  "Governance": "",
+  "test_market": "",
+  "note": "Fill these in after running: forge script script/Deploy.s.sol --rpc-url $BASE_SEPOLIA_RPC --broadcast"
+}
