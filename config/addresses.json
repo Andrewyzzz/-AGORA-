@@ -1,9 +1,10 @@
 {
   "network": "base-sepolia",
   "chain_id": 84532,
-  "MockCollateral": "",
-  "MarketFactory": "",
-  "Governance": "",
-  "test_market": "",
-  "note": "Fill these in after running: forge script script/Deploy.s.sol --rpc-url $BASE_SEPOLIA_RPC --broadcast"
+  "MockCollateral": "0xE7b83Ee84cAE62F652400CBa0AF63B76c516260e",
+  "MarketFactory": "0x776cA31fa6859E4F813F09bE8349e711d4129377",
+  "Governance": "0x366c7b695b92DC64a3C05132972070821671CA4F",
+  "test_market": "0x8e5df63732ebDD8f104e09c3240e601D83B1F624",
+  "deployed_at_block": 40855780,
+  "deploy_tx": "0x795709425f2e1f3389f6d0a843aacef3ac4128170f4e708a777314fa3b5d9ffe"
 }
