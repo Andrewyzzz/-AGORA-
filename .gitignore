@@ -1,0 +1,25 @@
+# Environment / secrets — NEVER commit
+.env
+*.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Database
+data/*.db
+data/*.sqlite
+
+# Foundry build artifacts
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+contracts/foundry.lock
+
+# macOS
+.DS_Store
