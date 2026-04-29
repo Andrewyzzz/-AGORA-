@@ -187,18 +187,14 @@ contract LMSRMarketTest is Test {
         vm.prank(alice);
         market.buy(LMSRMarket.Outcome.YES, 25e18);
 
-        (
-            string memory q,,,, uint256 yP, uint256 nP,
-            int256 qY, int256 qN, int256 bVal,
-            LMSRMarket.MarketState s,,
-        ) = market.getMarketInfo();
+        LMSRMarket.MarketInfo memory info = market.getMarketInfo();
 
-        assertEq(keccak256(bytes(q)), keccak256(bytes("Will BTC exceed 150000 USD by Dec 31, 2026?")));
-        assertGt(yP, nP, "YES price should be higher after YES purchases");
-        assertEq(qY, 25e18, "qYes should be 25");
-        assertEq(qN, 0,     "qNo should be 0");
-        assertEq(bVal, B,   "b should match");
-        assertEq(uint256(s), uint256(LMSRMarket.MarketState.ACTIVE));
+        assertEq(keccak256(bytes(info.question)), keccak256(bytes("Will BTC exceed 150000 USD by Dec 31, 2026?")));
+        assertGt(info.yesPrice, info.noPrice, "YES price should be higher after YES purchases");
+        assertEq(info.qYes, 25e18, "qYes should be 25");
+        assertEq(info.qNo, 0,      "qNo should be 0");
+        assertEq(info.b, B,        "b should match");
+        assertEq(uint256(info.state), uint256(LMSRMarket.MarketState.ACTIVE));
     }
 
     // ============ Factory ============
@@ -215,5 +211,17 @@ contract LMSRMarketTest is Test {
             address(this)
         );
         assertEq(factory.getMarketCount(), 2, "Should have 2 markets");
+    }
+}
+
+contract MathDebugTest is Test {
+    function test_wadLnAndExp() public view {
+        console2.log("wadLn(1e18)  =", uint256(FixedPointMathLib.wadLn(int256(1e18))));
+        console2.log("wadLn(2e18)  =", uint256(FixedPointMathLib.wadLn(int256(2e18))));
+        console2.log("wadExp(0)    =", uint256(FixedPointMathLib.wadExp(0)));
+        console2.log("wadExp(1e18) =", uint256(FixedPointMathLib.wadExp(int256(1e18))));
+        // expected: ln(2)*1e18 = 693147180559945309
+        // expected: wadExp(0)  = 1e18
+        // expected: wadExp(1e18) = 2718281828459045235
     }
 }

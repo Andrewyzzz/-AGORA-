@@ -264,39 +264,37 @@ contract LMSRMarket {
         return uint256(delta);
     }
 
+    struct MarketInfo {
+        string question;
+        string resolutionCriteria;
+        uint256 resolutionTimestamp;
+        address resolver;
+        uint256 yesPrice;
+        uint256 noPrice;
+        int256 qYes;
+        int256 qNo;
+        int256 b;
+        MarketState state;
+        Outcome resolvedOutcome;
+        uint256 collateralBalance;
+    }
+
     /// @notice Get all market state in a single call (for agent framework efficiency)
-    function getMarketInfo()
-        external
-        view
-        returns (
-            string memory _question,
-            string memory _resolutionCriteria,
-            uint256 _resolutionTimestamp,
-            address _resolver,
-            uint256 _yesPrice,
-            uint256 _noPrice,
-            int256 _qYes,
-            int256 _qNo,
-            int256 _b,
-            MarketState _state,
-            Outcome _resolvedOutcome,
-            uint256 _collateralBalance
-        )
-    {
-        return (
-            question,
-            resolutionCriteria,
-            resolutionTimestamp,
-            resolver,
-            _getYesPrice(),
-            _getNoPrice(),
-            qYes,
-            qNo,
-            b,
-            state,
-            resolvedOutcome,
-            collateral.balanceOf(address(this))
-        );
+    function getMarketInfo() external view returns (MarketInfo memory) {
+        return MarketInfo({
+            question: question,
+            resolutionCriteria: resolutionCriteria,
+            resolutionTimestamp: resolutionTimestamp,
+            resolver: resolver,
+            yesPrice: _getYesPrice(),
+            noPrice: _getNoPrice(),
+            qYes: qYes,
+            qNo: qNo,
+            b: b,
+            state: state,
+            resolvedOutcome: resolvedOutcome,
+            collateralBalance: collateral.balanceOf(address(this))
+        });
     }
 
     // ============ Internal ============
