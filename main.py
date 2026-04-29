@@ -31,7 +31,7 @@ console = Console()
 from agents.core.base_agent import BaseAgent
 from agents.llm.claude_backend import ClaudeBackend
 from agents.llm.openai_backend import OpenAIBackend
-from agents.llm.together_backend import TogetherBackend
+from agents.llm.deepseek_backend import DeepSeekBackend
 from agents.prompts.base_rate_agent import SYSTEM_PROMPT as PROMPT_A
 from agents.prompts.narrative_agent import SYSTEM_PROMPT as PROMPT_B
 from agents.prompts.contrarian_agent import SYSTEM_PROMPT as PROMPT_C
@@ -83,13 +83,13 @@ def build_agents(w3: Web3, addresses: dict) -> list[BaseAgent]:
             newsapi_key=newsapi_key,
         ))
 
-    # Agent C — Llama 3 — Contrarian trader
+    # Agent C — DeepSeek — Contrarian trader
     key_c = os.environ.get("AGENT_C_PRIVATE_KEY")
     if key_c:
         agents.append(BaseAgent(
             agent_id="Agent-C",
             private_key=key_c,
-            llm_backend=TogetherBackend(system_prompt=PROMPT_C),
+            llm_backend=DeepSeekBackend(system_prompt=PROMPT_C),
             w3=w3,
             addresses=addresses,
             newsapi_key=newsapi_key,

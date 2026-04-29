@@ -20,7 +20,7 @@
     },
     "agent_c": {
       "address": "0x9E179B01B10182f36A518F462785EdbF307417E4",
-      "llm_backend": "Llama 3 (Together AI)",
+      "llm_backend": "DeepSeek (deepseek-chat)",
       "persona": "Contrarian trader",
       "description": "系统性寻找市场错误定价，逆向交易，质疑共识"
     }
