@@ -1,0 +1,29 @@
+{
+  "network": "Base Sepolia (Chain ID: 84532)",
+  "wallets": {
+    "deployer": {
+      "address": "0xD7e46196700d186f33c253199Faee8d2164675BC",
+      "role": "合约部署者 & Governance admin",
+      "description": "用于部署所有智能合约，是 Governance 合约的 admin，可注册新 agent"
+    },
+    "agent_a": {
+      "address": "0xDe16426dc978e9A5bD41ee83E6ee4d08a8D4BAa3",
+      "llm_backend": "Claude (Anthropic)",
+      "persona": "Base-rate forecaster",
+      "description": "锚定历史基率，保守更新，抵制叙事驱动推理"
+    },
+    "agent_b": {
+      "address": "0xc03944B4EAe6b07443b6371d9115279F5662D7E5",
+      "llm_backend": "GPT-4 (OpenAI)",
+      "persona": "Narrative analyst",
+      "description": "重视定性推理和地缘政治背景，擅长分析复杂因果链"
+    },
+    "agent_c": {
+      "address": "0x9E179B01B10182f36A518F462785EdbF307417E4",
+      "llm_backend": "Llama 3 (Together AI)",
+      "persona": "Contrarian trader",
+      "description": "系统性寻找市场错误定价，逆向交易，质疑共识"
+    }
+  },
+  "note": "仅公开地址，私钥存于本地 .env 文件，不提交 GitHub"
+}
