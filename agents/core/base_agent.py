@@ -73,9 +73,11 @@ class BaseAgent:
         One agent step:
         1. Maybe propose a new market
         2. Vote on pending proposals
-        3. Trade on all active markets
-        4. Log everything
+        3. Execute approved proposals
+        4. Resolve expired markets (if this agent is the resolver)
+        5. Trade on all active markets
         """
+        import time
         news = self.data.get_recent_news(20)
 
         # 1. Governance: propose
@@ -87,10 +89,49 @@ class BaseAgent:
         # 3. Governance: execute approved
         self.governance.try_execute_approved()
 
-        # 4. Trade on active markets
+        # 4. Resolve expired markets where this agent is the resolver
         markets = self.execution.get_all_markets()
         for market_addr in markets:
+            self._maybe_resolve(market_addr, news)
+
+        # 5. Trade on active markets
+        for market_addr in markets:
             self._trade_on_market(market_addr, news, db_logger)
+
+    def _maybe_resolve(self, market_address: str, news: list[str]):
+        """Resolve a market if it has expired and this agent is the designated resolver."""
+        import time
+        try:
+            info = self.execution.get_market_info(market_address)
+        except Exception:
+            return
+
+        if info["state"] != 0:          # already resolved
+            return
+        if info["resolver"].lower() != self.wallet.address.lower():
+            return                      # not our market to resolve
+        if info["resolution_timestamp"] > time.time():
+            return                      # not expired yet
+
+        self._log(f"[{self.agent_id}] Market expired, resolving: '{info['question'][:50]}'")
+        try:
+            decision = self.decision.decide_resolution(
+                question=info["question"],
+                resolution_criteria=info["resolution_criteria"],
+                evidence_sources=[
+                    f"Current market price: YES={info['yes_price']:.1%}",
+                    *news[:5],
+                ],
+            )
+            outcome_int = 0 if decision.outcome == "YES" else 1
+            result = self.execution.resolve(market_address, outcome_int)
+            self._log(
+                f"[{self.agent_id}] Resolved '{info['question'][:50]}' → "
+                f"{decision.outcome} (confidence={decision.confidence}) "
+                f"tx={result['tx_hash'][:12]}..."
+            )
+        except Exception as e:
+            self._log(f"[{self.agent_id}] Resolution failed: {e}")
 
     def _trade_on_market(self, market_address: str, news: list[str], db_logger=None):
         try:
