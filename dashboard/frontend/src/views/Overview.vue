@@ -169,11 +169,13 @@ function timeAgo(ts) {
 }
 
 async function refresh() {
-  const [s, m, a, t] = await Promise.all([getStats(), getMarkets(), getAgents(), getTrades(20)])
+  // Load fast endpoints first so page renders immediately
+  const [s, m, t] = await Promise.all([getStats(), getMarkets(), getTrades(20)])
   stats.value   = s.data
   markets.value = m.data
-  agents.value  = a.data
   trades.value  = t.data
+  // Load agents separately (slow - checks token balances for all markets)
+  getAgents().then(r => { agents.value = r.data }).catch(() => {})
 }
 
 onMounted(() => { refresh(); timer = setInterval(refresh, 30000) })
