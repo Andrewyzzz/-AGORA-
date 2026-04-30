@@ -86,9 +86,9 @@ class ExecutionModule:
         amount_wad = int(amount_tokens * WAD)
         market = self.get_market(market_address)
 
-        # Estimate cost and ensure approval
+        # Estimate cost and ensure approval (with 20% buffer for price movement)
         cost_wad = market.functions.getCost(outcome, amount_wad).call()
-        self.ensure_approval(market_address, cost_wad)
+        self.ensure_approval(market_address, int(cost_wad * 1.2))
 
         tx = market.functions.buy(outcome, amount_wad).build_transaction({
             "from": self.wallet.address,
@@ -160,7 +160,10 @@ class ExecutionModule:
         ).build_transaction({"from": self.wallet.address})
         tx_hash = self.wallet.sign_and_send(tx)
         receipt = self.wallet.wait_for_receipt(tx_hash)
-        return {"tx_hash": tx_hash, "receipt": receipt}
+        # Read the created market address from proposal storage (most reliable)
+        proposal = self.governance.functions.proposals(proposal_id).call()
+        market_addr = proposal[9]  # createdMarket field
+        return {"tx_hash": tx_hash, "receipt": receipt, "market_addr": market_addr}
 
     def get_proposal_count(self) -> int:
         return self.governance.functions.getProposalCount().call()
