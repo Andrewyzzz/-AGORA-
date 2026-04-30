@@ -96,6 +96,12 @@
       </div>
     </div>
 
+    <!-- Price Chart -->
+    <div class="mt-6">
+      <h2 class="text-lg font-semibold mb-4" style="font-family: var(--font-headline)">Price History</h2>
+      <PriceChart :markets="markets" />
+    </div>
+
     <!-- Agent summary row -->
     <div class="grid grid-cols-3 gap-4 mt-6">
       <div v-for="agent in agents" :key="agent.id"
@@ -139,6 +145,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getStats, getMarkets, getAgents, getTrades } from '../api/client.js'
+import PriceChart from '../components/PriceChart.vue'
 
 const stats   = ref({})
 const markets = ref([])

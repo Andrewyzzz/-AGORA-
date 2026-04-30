@@ -1,5 +1,10 @@
 <template>
   <div class="p-8">
+    <!-- K-line chart -->
+    <div class="mb-8">
+      <h2 class="text-lg font-semibold mb-4" style="font-family: var(--font-headline)">Price Chart</h2>
+      <PriceChart :markets="markets" />
+    </div>
     <h1 class="text-2xl font-bold mb-2" style="font-family: var(--font-headline)">Markets</h1>
     <p class="text-sm mb-8" style="color: var(--color-on-surface-variant)">All prediction markets created by AI agents</p>
 
@@ -81,6 +86,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { getMarkets } from '../api/client.js'
+import PriceChart from '../components/PriceChart.vue'
 
 const markets  = ref([])
 const selected = ref(null)

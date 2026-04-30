@@ -128,6 +128,31 @@ def main():
                 agent.step(db_logger=db)
             except Exception as e:
                 log.error(f"[{agent.agent_id}] Step failed: {e}", exc_info=True)
+
+        # Log price snapshot for every active market after each step
+        try:
+            from web3 import Web3 as _W3
+            import json as _json
+            _w3 = _W3(_W3.HTTPProvider(os.environ["BASE_SEPOLIA_RPC"]))
+            _addrs = json.load(open(Path("config/addresses.json")))
+            _factory_abi = json.load(open(Path("config/abis/MarketFactory.json")))
+            _market_abi  = json.load(open(Path("config/abis/LMSRMarket.json")))
+            _factory = _w3.eth.contract(
+                address=_W3.to_checksum_address(_addrs["MarketFactory"]),
+                abi=_factory_abi,
+            )
+            WAD = 10 ** 18
+            for maddr in _factory.functions.getAllMarkets().call():
+                try:
+                    _m = _w3.eth.contract(address=_W3.to_checksum_address(maddr), abi=_market_abi)
+                    info = _m.functions.getMarketInfo().call()
+                    if info[9] == 0:  # ACTIVE only
+                        db.log_price(maddr, info[4] / WAD)
+                except Exception:
+                    pass
+        except Exception as e:
+            log.warning(f"Price logging failed: {e}")
+
         log.info(f"Step {step_count} complete. Sleeping {step_interval}s...")
         time.sleep(step_interval)
 

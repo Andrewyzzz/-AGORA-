@@ -312,6 +312,40 @@ def get_price_history(market_id: str, points: int = 50):
     return [{"t": r[0], "agora": r[1], "polymarket": r[2]} for r in reversed(rows)]
 
 
+@app.get("/api/ohlc")
+def get_ohlc(market_id: str, interval: int = 300):
+    """Return OHLC candlestick data. interval = seconds per candle (default 5 min)."""
+    db = get_db()
+    rows = db.execute("""
+        SELECT timestamp, agora_yes_price
+        FROM market_prices
+        WHERE market_id = ?
+        ORDER BY timestamp ASC
+    """, (market_id,)).fetchall()
+    db.close()
+
+    if not rows:
+        return []
+
+    candles = []
+    bucket_start = int(rows[0][0] // interval) * interval
+    o = h = l = c = rows[0][1]
+
+    for ts, price in rows:
+        bucket = int(ts // interval) * interval
+        if bucket > bucket_start:
+            candles.append({"t": bucket_start * 1000, "o": round(o,4), "h": round(h,4), "l": round(l,4), "c": round(c,4)})
+            bucket_start = bucket
+            o = h = l = c = price
+        else:
+            h = max(h, price)
+            l = min(l, price)
+            c = price
+
+    candles.append({"t": bucket_start * 1000, "o": round(o,4), "h": round(h,4), "l": round(l,4), "c": round(c,4)})
+    return candles
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
