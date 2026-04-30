@@ -137,6 +137,21 @@ class BaseAgent:
             if action_type == "buy":
                 result = self.execution.buy(market_address, outcome, amount)
             else:
+                # Check we actually hold tokens before selling
+                token = (self.execution.get_market(market_address)
+                         .functions.yesToken().call() if outcome == 0
+                         else self.execution.get_market(market_address)
+                         .functions.noToken().call())
+                from web3 import Web3
+                from agents.modules.execution_module import _load_abi
+                tok_contract = self.w3.eth.contract(
+                    address=Web3.to_checksum_address(token),
+                    abi=_load_abi("OutcomeToken"),
+                )
+                balance = tok_contract.functions.balanceOf(self.wallet.address).call()
+                if balance < int(amount * 10**18):
+                    self._log(f"[{self.agent_id}] SKIP SELL — no {['YES','NO'][outcome]} tokens held")
+                    return
                 result = self.execution.sell(market_address, outcome, amount)
 
             info_after = self.execution.get_market_info(market_address)

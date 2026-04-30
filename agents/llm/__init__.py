@@ -1,4 +1,4 @@
-from .base import LLMBackend, TradeDecision, GovernanceDecision
+from .base import LLMBackend, TradeDecision, ProposalDecision, VoteDecision, ResolutionDecision
 from .claude_backend import ClaudeBackend
 from .openai_backend import OpenAIBackend
-from .together_backend import TogetherBackend
+from .deepseek_backend import DeepSeekBackend

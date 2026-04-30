@@ -16,7 +16,10 @@ RESOLUTION_SCHEMA = ResolutionDecision.model_json_schema()
 class ClaudeBackend(LLMBackend):
     def __init__(self, system_prompt: str, model: str = "claude-opus-4-6"):
         super().__init__(model_name=model, system_prompt=system_prompt)
-        self.client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        self.client = anthropic.Anthropic(
+            api_key=os.environ["ANTHROPIC_API_KEY"],
+            base_url=os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com"),
+        )
 
     def _call(self, user_message: str, schema: dict) -> dict:
         response = self.client.messages.create(
