@@ -1,13 +1,15 @@
 """
-AGORA Dashboard Backend
-FastAPI server that reads on-chain data and SQLite logs.
+AGORA Dashboard Backend — with in-memory cache for fast responses.
+All on-chain data is refreshed every 30s in the background.
+API requests return from cache immediately (<5ms).
 """
 import os
 import json
 import sqlite3
 import time
+import asyncio
+import threading
 from pathlib import Path
-from typing import Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from web3 import Web3
@@ -20,14 +22,19 @@ ROOT = Path(__file__).parents[2]
 WAD = 10 ** 18
 
 app = FastAPI(title="AGORA Dashboard API")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# ── Setup ─────────────────────────────────────────────────────────────────────
+# ── In-memory cache ────────────────────────────────────────────────────────────
+_cache = {
+    "stats":      {},
+    "markets":    [],
+    "agents":     [],
+    "governance": [],
+    "last_updated": 0,
+}
+_cache_lock = threading.Lock()
+
+# ── Setup helpers ──────────────────────────────────────────────────────────────
 
 def get_w3():
     return Web3(Web3.HTTPProvider(os.environ["BASE_SEPOLIA_RPC"]))
@@ -44,297 +51,266 @@ def get_db():
     db_path = os.environ.get("DB_PATH", str(ROOT / "data" / "agora.db"))
     return sqlite3.connect(db_path)
 
-AGENT_NAMES = {
+AGENT_ADDRS = {
     Account.from_key(os.environ["AGENT_A_PRIVATE_KEY"]).address: "Agent-A",
     Account.from_key(os.environ["AGENT_B_PRIVATE_KEY"]).address: "Agent-B",
     Account.from_key(os.environ["AGENT_C_PRIVATE_KEY"]).address: "Agent-C",
 }
-AGENT_MODELS = {
-    "Agent-A": "Claude Opus",
-    "Agent-B": "GPT-4o",
-    "Agent-C": "DeepSeek",
-}
-AGENT_PERSONAS = {
-    "Agent-A": "Base-rate forecaster",
-    "Agent-B": "Narrative analyst",
-    "Agent-C": "Contrarian trader",
-}
+AGENT_MODELS   = {"Agent-A": "Claude Opus", "Agent-B": "GPT-4o", "Agent-C": "DeepSeek"}
+AGENT_PERSONAS = {"Agent-A": "Base-rate forecaster", "Agent-B": "Narrative analyst", "Agent-C": "Contrarian trader"}
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Cache refresh (runs in background thread every 30s) ────────────────────────
 
-def get_market_info(w3, market_address, addrs):
-    market = w3.eth.contract(
-        address=Web3.to_checksum_address(market_address),
-        abi=load_abi("LMSRMarket"),
-    )
-    info = market.functions.getMarketInfo().call()
-    return {
-        "address": market_address,
-        "question": info[0],
-        "resolution_criteria": info[1],
-        "resolution_timestamp": info[2],
-        "resolver": info[3],
-        "yes_price": round(info[4] / WAD, 4),
-        "no_price": round(info[5] / WAD, 4),
-        "q_yes": round(info[6] / WAD, 2),
-        "q_no": round(info[7] / WAD, 2),
-        "b": round(info[8] / WAD, 2),
-        "state": "ACTIVE" if info[9] == 0 else "RESOLVED",
-        "resolved_outcome": ["YES", "NO"][info[10]] if info[9] == 1 else None,
-        "collateral_balance": round(info[11] / WAD, 2),
-    }
+def _refresh_cache():
+    try:
+        w3    = get_w3()
+        addrs = load_addresses()
+        db    = get_db()
 
-# ── API Routes ────────────────────────────────────────────────────────────────
+        factory = w3.eth.contract(
+            address=Web3.to_checksum_address(addrs["MarketFactory"]),
+            abi=load_abi("MarketFactory"),
+        )
+        governance = w3.eth.contract(
+            address=Web3.to_checksum_address(addrs["Governance"]),
+            abi=load_abi("Governance"),
+        )
+        collateral = w3.eth.contract(
+            address=Web3.to_checksum_address(addrs["MockCollateral"]),
+            abi=load_abi("MockCollateral"),
+        )
+        market_abi = load_abi("LMSRMarket")
 
-@app.get("/api/stats")
-def get_stats():
-    w3 = get_w3()
-    addrs = load_addresses()
-    factory = w3.eth.contract(
-        address=Web3.to_checksum_address(addrs["MarketFactory"]),
-        abi=load_abi("MarketFactory"),
-    )
-    governance = w3.eth.contract(
-        address=Web3.to_checksum_address(addrs["Governance"]),
-        abi=load_abi("Governance"),
-    )
-    db = get_db()
-    trades = db.execute("SELECT COUNT(*) FROM agent_actions WHERE action_type NOT LIKE 'hold%'").fetchone()[0]
-    proposals = governance.functions.getProposalCount().call()
-    markets = factory.functions.getMarketCount().call()
-    db.close()
-
-    return {
-        "total_markets": markets,
-        "total_trades": trades,
-        "total_proposals": proposals,
-        "registered_agents": 3,
-        "block": w3.eth.block_number,
-        "network": "Base Sepolia",
-    }
-
-
-@app.get("/api/markets")
-def get_markets():
-    w3 = get_w3()
-    addrs = load_addresses()
-    factory = w3.eth.contract(
-        address=Web3.to_checksum_address(addrs["MarketFactory"]),
-        abi=load_abi("MarketFactory"),
-    )
-    market_addresses = factory.functions.getAllMarkets().call()
-    markets = []
-    for addr in market_addresses:
-        try:
-            markets.append(get_market_info(w3, addr, addrs))
-        except Exception:
-            continue
-    return markets
-
-
-@app.get("/api/markets/{address}")
-def get_market(address: str):
-    w3 = get_w3()
-    addrs = load_addresses()
-    info = get_market_info(w3, address, addrs)
-
-    # Price history from DB
-    db = get_db()
-    prices = db.execute("""
-        SELECT timestamp, agora_yes_price
-        FROM market_prices
-        WHERE market_id = ?
-        ORDER BY timestamp DESC LIMIT 100
-    """, (address,)).fetchall()
-    db.close()
-
-    info["price_history"] = [
-        {"t": round(p[0]), "yes": round(p[1], 4)} for p in reversed(prices)
-    ]
-    return info
-
-
-@app.get("/api/agents")
-def get_agents():
-    w3 = get_w3()
-    addrs = load_addresses()
-    collateral = w3.eth.contract(
-        address=Web3.to_checksum_address(addrs["MockCollateral"]),
-        abi=load_abi("MockCollateral"),
-    )
-    factory = w3.eth.contract(
-        address=Web3.to_checksum_address(addrs["MarketFactory"]),
-        abi=load_abi("MarketFactory"),
-    )
-    market_addresses = factory.functions.getAllMarkets().call()
-
-    db = get_db()
-    agents = []
-    for addr, name in AGENT_NAMES.items():
-        eth_bal = round(float(w3.from_wei(w3.eth.get_balance(addr), "ether")), 6)
-        col_bal = round(collateral.functions.balanceOf(addr).call() / WAD, 2)
-
-        # Positions across all markets
-        positions = []
-        for maddr in market_addresses:
+        # ── Markets ──────────────────────────────────────────────────────────
+        market_addresses = factory.functions.getAllMarkets().call()
+        markets = []
+        for addr in market_addresses:
             try:
-                market = w3.eth.contract(
-                    address=Web3.to_checksum_address(maddr),
-                    abi=load_abi("LMSRMarket"),
-                )
-                info = market.functions.getMarketInfo().call()
-                yes_tok = w3.eth.contract(
-                    address=Web3.to_checksum_address(market.functions.yesToken().call()),
-                    abi=load_abi("OutcomeToken"),
-                )
-                no_tok = w3.eth.contract(
-                    address=Web3.to_checksum_address(market.functions.noToken().call()),
-                    abi=load_abi("OutcomeToken"),
-                )
-                yes_bal = yes_tok.functions.balanceOf(addr).call() / WAD
-                no_bal = no_tok.functions.balanceOf(addr).call() / WAD
-                if yes_bal > 0 or no_bal > 0:
-                    positions.append({
-                        "market_address": maddr,
-                        "question": info[0][:60],
-                        "yes_tokens": round(yes_bal, 2),
-                        "no_tokens": round(no_bal, 2),
-                        "yes_price": round(info[4] / WAD, 4),
-                    })
+                m    = w3.eth.contract(address=Web3.to_checksum_address(addr), abi=market_abi)
+                info = m.functions.getMarketInfo().call()
+                markets.append({
+                    "address":            addr,
+                    "question":           info[0],
+                    "resolution_criteria":info[1],
+                    "resolution_timestamp":info[2],
+                    "resolver":           info[3],
+                    "yes_price":          round(info[4] / WAD, 4),
+                    "no_price":           round(info[5] / WAD, 4),
+                    "q_yes":              round(info[6] / WAD, 2),
+                    "q_no":               round(info[7] / WAD, 2),
+                    "b":                  round(info[8] / WAD, 2),
+                    "state":              "ACTIVE" if info[9] == 0 else "RESOLVED",
+                    "resolved_outcome":   ["YES","NO"][info[10]] if info[9] == 1 else None,
+                    "collateral_balance": round(info[11] / WAD, 2),
+                })
             except Exception:
                 continue
 
-        # Trade stats from DB
-        stats = db.execute("""
-            SELECT
-                COUNT(*) as total_trades,
-                SUM(CASE WHEN action_type LIKE '%YES%' THEN 1 ELSE 0 END) as yes_trades,
-                SUM(CASE WHEN action_type LIKE '%NO%' THEN 1 ELSE 0 END) as no_trades
-            FROM agent_actions
-            WHERE agent_id = ? AND action_type NOT LIKE 'hold%'
-        """, (name,)).fetchone()
+        # ── Stats ─────────────────────────────────────────────────────────────
+        trades    = db.execute("SELECT COUNT(*) FROM agent_actions WHERE action_type NOT LIKE 'hold%'").fetchone()[0]
+        proposals = governance.functions.getProposalCount().call()
+        stats = {
+            "total_markets":    len(markets),
+            "total_trades":     trades,
+            "total_proposals":  proposals,
+            "registered_agents":3,
+            "block":            w3.eth.block_number,
+            "network":          "Base Sepolia",
+        }
 
-        agents.append({
-            "id": name,
-            "address": addr,
-            "model": AGENT_MODELS[name],
-            "persona": AGENT_PERSONAS[name],
-            "eth_balance": eth_bal,
-            "agora_balance": col_bal,
-            "total_trades": stats[0] or 0,
-            "yes_trades": stats[1] or 0,
-            "no_trades": stats[2] or 0,
-            "positions": positions,
-        })
+        # ── Agents (fast: only ETH/AGORA balance + SQLite stats, no per-market RPC) ──
+        agents = []
+        for addr, name in AGENT_ADDRS.items():
+            eth_bal = round(float(w3.from_wei(w3.eth.get_balance(addr), "ether")), 6)
+            col_bal = round(collateral.functions.balanceOf(addr).call() / WAD, 2)
 
-    db.close()
-    return agents
+            # Trade stats from SQLite — instant
+            st = db.execute("""
+                SELECT COUNT(*),
+                       SUM(CASE WHEN action_type LIKE '%YES%' THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN action_type LIKE '%NO%'  THEN 1 ELSE 0 END),
+                       AVG(probability_estimate)
+                FROM agent_actions WHERE agent_id=? AND action_type NOT LIKE 'hold%'
+            """, (name,)).fetchone()
 
+            # Derive positions from trade history (no RPC needed)
+            pos_rows = db.execute("""
+                SELECT market_id,
+                  SUM(CASE WHEN action_type='buy_YES' THEN amount_tokens ELSE 0 END) -
+                  SUM(CASE WHEN action_type='sell_YES' THEN amount_tokens ELSE 0 END) as yes_net,
+                  SUM(CASE WHEN action_type='buy_NO' THEN amount_tokens ELSE 0 END) -
+                  SUM(CASE WHEN action_type='sell_NO' THEN amount_tokens ELSE 0 END) as no_net
+                FROM agent_actions
+                WHERE agent_id=? AND action_type NOT LIKE 'hold%'
+                GROUP BY market_id
+                HAVING yes_net > 0 OR no_net > 0
+            """, (name,)).fetchall()
+
+            # Enrich with market questions from cache
+            mkt_map = {m["address"]: m for m in markets}
+            positions = []
+            for mid, ynet, nnet in pos_rows:
+                mkt = mkt_map.get(mid, {})
+                if (ynet or 0) > 0 or (nnet or 0) > 0:
+                    positions.append({
+                        "market_address": mid,
+                        "question":       mkt.get("question", mid[:20]+"...")[:60],
+                        "yes_tokens":     round(ynet or 0, 2),
+                        "no_tokens":      round(nnet or 0, 2),
+                        "yes_price":      mkt.get("yes_price", 0.5),
+                    })
+
+            agents.append({
+                "id": name, "address": addr,
+                "model": AGENT_MODELS[name], "persona": AGENT_PERSONAS[name],
+                "eth_balance":   eth_bal,
+                "agora_balance": col_bal,
+                "total_trades":  st[0] or 0,
+                "yes_trades":    st[1] or 0,
+                "no_trades":     st[2] or 0,
+                "avg_prob":      round(st[3] or 0.5, 3),
+                "positions":     positions,
+            })
+
+        # ── Governance ────────────────────────────────────────────────────────
+        count = governance.functions.getProposalCount().call()
+        gov_list = []
+        for i in range(count):
+            p  = governance.functions.proposals(i).call()
+            vr = governance.functions.getVoteRecords(i).call()
+            gov_list.append({
+                "id": i,
+                "proposer":            AGENT_ADDRS.get(p[0], p[0][:10]+"..."),
+                "question":            p[1],
+                "resolution_criteria": p[2],
+                "resolution_timestamp":p[3],
+                "votes_for":           p[5],
+                "votes_against":       p[6],
+                "voting_deadline":     p[7],
+                "executed":            p[8],
+                "created_market":      p[9] if p[9] != "0x"+"0"*40 else None,
+                "proposer_reasoning":  p[10],
+                "vote_records": [{
+                    "voter":     AGENT_ADDRS.get(v[0], v[0][:10]+"..."),
+                    "support":   v[1],
+                    "reasoning": v[2],
+                } for v in vr],
+            })
+
+        db.close()
+
+        with _cache_lock:
+            _cache["stats"]        = stats
+            _cache["markets"]      = markets
+            _cache["agents"]       = agents
+            _cache["governance"]   = list(reversed(gov_list))
+            _cache["last_updated"] = time.time()
+
+        print(f"[cache] refreshed — {len(markets)} markets, {stats['total_trades']} trades")
+
+    except Exception as e:
+        print(f"[cache] refresh error: {e}")
+
+
+def _background_refresh(interval=30):
+    while True:
+        _refresh_cache()
+        time.sleep(interval)
+
+
+@app.on_event("startup")
+async def startup():
+    t = threading.Thread(target=_background_refresh, daemon=True)
+    t.start()
+
+# ── API Routes (all served from cache) ────────────────────────────────────────
+
+@app.get("/api/stats")
+def get_stats():
+    with _cache_lock:
+        return _cache["stats"] or {"message": "Loading..."}
+
+@app.get("/api/markets")
+def get_markets():
+    with _cache_lock:
+        return _cache["markets"]
+
+@app.get("/api/markets/{address}")
+def get_market(address: str):
+    with _cache_lock:
+        for m in _cache["markets"]:
+            if m["address"].lower() == address.lower():
+                return m
+    return {}
+
+@app.get("/api/agents")
+def get_agents():
+    with _cache_lock:
+        return _cache["agents"]
 
 @app.get("/api/trades")
 def get_trades(limit: int = 50):
-    db = get_db()
+    db   = get_db()
     rows = db.execute("""
         SELECT timestamp, agent_id, llm_backend, action_type, market_id,
                probability_estimate, confidence, reasoning,
                amount_tokens, price_before, price_after, tx_hash
-        FROM agent_actions
-        ORDER BY timestamp DESC
-        LIMIT ?
+        FROM agent_actions ORDER BY timestamp DESC LIMIT ?
     """, (limit,)).fetchall()
     db.close()
-    return [
-        {
-            "timestamp": r[0],
-            "agent_id": r[1],
-            "llm_backend": r[2],
-            "action_type": r[3],
-            "market_id": r[4],
-            "probability_estimate": r[5],
-            "confidence": r[6],
-            "reasoning": r[7],
-            "amount_tokens": r[8],
-            "price_before": r[9],
-            "price_after": r[10],
-            "tx_hash": r[11],
-        }
-        for r in rows
-    ]
-
+    return [{
+        "timestamp": r[0], "agent_id": r[1], "llm_backend": r[2],
+        "action_type": r[3], "market_id": r[4],
+        "probability_estimate": r[5], "confidence": r[6], "reasoning": r[7],
+        "amount_tokens": r[8], "price_before": r[9], "price_after": r[10],
+        "tx_hash": r[11],
+    } for r in rows]
 
 @app.get("/api/governance")
 def get_governance():
-    w3 = get_w3()
-    addrs = load_addresses()
-    governance = w3.eth.contract(
-        address=Web3.to_checksum_address(addrs["Governance"]),
-        abi=load_abi("Governance"),
-    )
-    count = governance.functions.getProposalCount().call()
-    proposals = []
-    for i in range(count):
-        p = governance.functions.proposals(i).call()
-        vote_records = governance.functions.getVoteRecords(i).call()
-        proposals.append({
-            "id": i,
-            "proposer": AGENT_NAMES.get(p[0], p[0][:10] + "..."),
-            "question": p[1],
-            "resolution_criteria": p[2],
-            "resolution_timestamp": p[3],
-            "votes_for": p[5],
-            "votes_against": p[6],
-            "voting_deadline": p[7],
-            "executed": p[8],
-            "created_market": p[9] if p[9] != "0x0000000000000000000000000000000000000000" else None,
-            "proposer_reasoning": p[10],
-            "vote_records": [
-                {
-                    "voter": AGENT_NAMES.get(v[0], v[0][:10] + "..."),
-                    "support": v[1],
-                    "reasoning": v[2],
-                }
-                for v in vote_records
-            ],
-        })
-    return list(reversed(proposals))
-
-
-@app.get("/api/price-history")
-def get_price_history(market_id: str, points: int = 50):
-    db = get_db()
-    rows = db.execute("""
-        SELECT timestamp, agora_yes_price, polymarket_yes_price
-        FROM market_prices
-        WHERE market_id = ?
-        ORDER BY timestamp DESC LIMIT ?
-    """, (market_id, points)).fetchall()
-    db.close()
-    return [{"t": r[0], "agora": r[1], "polymarket": r[2]} for r in reversed(rows)]
-
+    with _cache_lock:
+        return _cache["governance"]
 
 @app.get("/api/ohlc")
 def get_ohlc(market_id: str, interval: int = 300):
-    """Return OHLC candlestick data. interval = seconds per candle (default 5 min)."""
     db = get_db()
+
+    # Use agent_actions price data as source (available immediately)
     rows = db.execute("""
-        SELECT timestamp, agora_yes_price
-        FROM market_prices
-        WHERE market_id = ?
+        SELECT timestamp, price_before, price_after
+        FROM agent_actions
+        WHERE market_id = ? AND price_before IS NOT NULL
         ORDER BY timestamp ASC
+    """, (market_id,)).fetchall()
+
+    # Also include market_prices snapshots if available
+    price_rows = db.execute("""
+        SELECT timestamp, agora_yes_price FROM market_prices
+        WHERE market_id = ? ORDER BY timestamp ASC
     """, (market_id,)).fetchall()
     db.close()
 
-    if not rows:
+    # Merge into unified price series: (timestamp, price)
+    series = []
+    for ts, pb, pa in rows:
+        series.append((ts - 1, pb))   # price before trade
+        series.append((ts,     pa))   # price after trade
+    for ts, price in price_rows:
+        series.append((ts, price))
+    series.sort(key=lambda x: x[0])
+
+    if not series:
         return []
 
+    # Aggregate into OHLC candles
     candles = []
-    bucket_start = int(rows[0][0] // interval) * interval
-    o = h = l = c = rows[0][1]
+    bucket_start = int(series[0][0] // interval) * interval
+    o = h = l = c = series[0][1]
 
-    for ts, price in rows:
+    for ts, price in series[1:]:
         bucket = int(ts // interval) * interval
         if bucket > bucket_start:
-            candles.append({"t": bucket_start * 1000, "o": round(o,4), "h": round(h,4), "l": round(l,4), "c": round(c,4)})
+            candles.append({"t": bucket_start*1000, "o": round(o,4), "h": round(h,4), "l": round(l,4), "c": round(c,4)})
             bucket_start = bucket
             o = h = l = c = price
         else:
@@ -342,10 +318,20 @@ def get_ohlc(market_id: str, interval: int = 300):
             l = min(l, price)
             c = price
 
-    candles.append({"t": bucket_start * 1000, "o": round(o,4), "h": round(h,4), "l": round(l,4), "c": round(c,4)})
+    candles.append({"t": bucket_start*1000, "o": round(o,4), "h": round(h,4), "l": round(l,4), "c": round(c,4)})
     return candles
+
+@app.get("/api/cache-status")
+def cache_status():
+    with _cache_lock:
+        return {
+            "last_updated": _cache["last_updated"],
+            "age_seconds":  round(time.time() - _cache["last_updated"], 1),
+            "markets":      len(_cache["markets"]),
+            "agents":       len(_cache["agents"]),
+        }
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
