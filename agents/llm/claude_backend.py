@@ -70,8 +70,13 @@ Based on your analytical approach and the above information, provide your tradin
 EXISTING MARKETS (avoid duplicating):
 {markets_str}
 
-Identify ONE upcoming event from the news that would make a valuable prediction market.
-If nothing compelling exists, set question to empty string."""
+Identify ONE upcoming FUTURE event that would make a valuable prediction market.
+IMPORTANT RULES:
+- The event MUST be in the future (has not happened yet)
+- The question must be answerable YES or NO after the resolution date
+- Do NOT propose markets about events that have already occurred
+- If the first item in the news says today's date, use that to judge what is future vs past
+- If nothing compelling exists, set question to empty string."""
         result = self._call(prompt, PROPOSAL_SCHEMA)
         if not result.get("question"):
             return None

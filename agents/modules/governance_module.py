@@ -25,7 +25,11 @@ class GovernanceModule:
 
     def maybe_propose(self) -> bool:
         """Scan news and submit a market proposal if a good opportunity exists."""
+        today = datetime.now(timezone.utc).strftime("%B %d, %Y")
         news = self.data.get_recent_news(20)
+        # Prepend today's date so the agent knows what counts as "future"
+        news_with_date = [f"[TODAY IS {today} — only propose markets about FUTURE events]"] + news
+
         existing = self.execution.get_all_markets()
         existing_questions = []
         for addr in existing[:10]:
@@ -35,7 +39,7 @@ class GovernanceModule:
             except Exception:
                 pass
 
-        proposal = self.decision.decide_proposal(news, existing_questions)
+        proposal = self.decision.decide_proposal(news_with_date, existing_questions)
         if not proposal or not proposal.question:
             self.log(f"[{self.agent_id}] No proposal opportunity found.")
             return False

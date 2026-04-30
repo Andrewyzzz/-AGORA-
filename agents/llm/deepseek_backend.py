@@ -69,7 +69,12 @@ Provide your trading decision."""
 EXISTING MARKETS (avoid duplicating):
 {markets_str}
 
-Propose ONE new prediction market. Set question to empty string if none."""
+Propose ONE new prediction market about a FUTURE event.
+IMPORTANT RULES:
+- The event MUST be in the future (has not happened yet)
+- Do NOT propose markets about events that have already occurred
+- If the first item in the news says today's date, use that to judge what is future vs past
+- Set question to empty string if no suitable future event exists."""
         result = self._call(prompt, ProposalDecision.model_json_schema())
         if not result.get("question"):
             return None
