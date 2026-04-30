@@ -12,7 +12,7 @@ class TradeDecision(BaseModel):
         description="Estimated probability of YES outcome (0-1)")
     confidence: str = Field(pattern="^(low|medium|high)$",
         description="Confidence level in the estimate")
-    key_factors: list[str] = Field(max_length=5,
+    key_factors: list[str] = Field(max_length=8,
         description="Top factors driving this estimate")
     reasoning: str = Field(
         description="Full chain-of-thought reasoning")
