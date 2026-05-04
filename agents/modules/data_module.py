@@ -41,7 +41,8 @@ class DataModule:
 
     def get_recent_news(self, max_items: int = 20) -> list[str]:
         if time.time() - self._cache_time < self.cache_ttl and self._cache:
-            return [item.to_str() for item in self._cache[:max_items]]
+            prices = self._fetch_prices()
+            return prices + [item.to_str() for item in self._cache[:max_items]]
 
         items = []
         items.extend(self._fetch_rss(RSS_FEEDS + CRYPTO_RSS_FEEDS))
@@ -50,7 +51,46 @@ class DataModule:
 
         self._cache = items[:50]
         self._cache_time = time.time()
-        return [item.to_str() for item in items[:max_items]]
+        prices = self._fetch_prices()
+        return prices + [item.to_str() for item in items[:max_items]]
+
+    def _fetch_prices(self) -> list[str]:
+        """Fetch real-time prices from CoinGecko and inject as context."""
+        try:
+            resp = requests.get(
+                "https://api.coingecko.com/api/v3/simple/price",
+                params={
+                    "ids": "bitcoin,ethereum,gold",
+                    "vs_currencies": "usd",
+                    "include_24hr_change": "true",
+                },
+                timeout=8,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            lines = ["[REAL-TIME MARKET PRICES — use these for any price-related predictions]"]
+            if "bitcoin" in data:
+                p = data["bitcoin"]
+                lines.append(f"BTC/USD: ${p['usd']:,.0f} (24h change: {p.get('usd_24h_change', 0):.1f}%)")
+            if "ethereum" in data:
+                p = data["ethereum"]
+                lines.append(f"ETH/USD: ${p['usd']:,.0f} (24h change: {p.get('usd_24h_change', 0):.1f}%)")
+            if "gold" in data:
+                p = data["gold"]
+                lines.append(f"Gold (XAU/USD): ${p['usd']:,.0f}")
+            # Also try to get DXY from a simple source
+            try:
+                fx = requests.get(
+                    "https://api.frankfurter.app/latest?from=USD&to=EUR,GBP,JPY",
+                    timeout=5,
+                ).json()
+                if "rates" in fx:
+                    lines.append(f"USD/EUR: {fx['rates'].get('EUR', '?')} | USD/GBP: {fx['rates'].get('GBP', '?')}")
+            except Exception:
+                pass
+            return lines
+        except Exception:
+            return []
 
     def _fetch_rss(self, feeds: list[str]) -> list[NewsItem]:
         items = []
