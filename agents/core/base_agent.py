@@ -94,7 +94,11 @@ class BaseAgent:
         for market_addr in markets:
             self._maybe_resolve(market_addr, news)
 
-        # 5. Trade on active markets
+        # 5. Redeem winning tokens from resolved markets
+        for market_addr in markets:
+            self._maybe_redeem(market_addr)
+
+        # 6. Trade on active markets
         for market_addr in markets:
             self._trade_on_market(market_addr, news, db_logger)
 
@@ -132,6 +136,48 @@ class BaseAgent:
             )
         except Exception as e:
             self._log(f"[{self.agent_id}] Resolution failed: {e}")
+
+    def _maybe_redeem(self, market_address: str):
+        """Redeem winning tokens if this market is resolved and we hold winning tokens."""
+        try:
+            info = self.execution.get_market_info(market_address)
+        except Exception:
+            return
+
+        if info["state"] != 1:  # not RESOLVED
+            return
+
+        # Check if we hold the winning token
+        outcome = info["resolved_outcome"]  # "YES" or "NO"
+        if outcome is None:
+            return
+
+        try:
+            market = self.execution.get_market(market_address)
+            from web3 import Web3
+            from agents.modules.execution_module import _load_abi
+            if outcome == "YES":
+                tok_addr = market.functions.yesToken().call()
+            else:
+                tok_addr = market.functions.noToken().call()
+
+            tok = self.w3.eth.contract(
+                address=Web3.to_checksum_address(tok_addr),
+                abi=_load_abi("OutcomeToken"),
+            )
+            balance = tok.functions.balanceOf(self.wallet.address).call()
+            if balance == 0:
+                return
+
+            result = self.execution.redeem(market_address)
+            payout = balance / 10**18
+            self._log(
+                f"[{self.agent_id}] Redeemed {payout:.1f} {outcome} tokens "
+                f"from '{info['question'][:40]}' "
+                f"tx={result['tx_hash'][:12]}..."
+            )
+        except Exception as e:
+            self._log(f"[{self.agent_id}] Redeem failed on {market_address[:12]}: {e}")
 
     def _trade_on_market(self, market_address: str, news: list[str], db_logger=None):
         try:
