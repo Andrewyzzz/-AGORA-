@@ -89,18 +89,58 @@ class BaseAgent:
         # 3. Governance: execute approved
         self.governance.try_execute_approved()
 
-        # 4. Resolve expired markets where this agent is the resolver
-        markets = self.execution.get_all_markets()
-        for market_addr in markets:
+        all_markets = self.execution.get_all_markets()
+
+        # 4. Resolve expired markets (check all, fast operation)
+        for market_addr in all_markets:
             self._maybe_resolve(market_addr, news)
 
-        # 5. Redeem winning tokens from resolved markets
-        for market_addr in markets:
+        # 5. Redeem winning tokens (check all, fast operation)
+        for market_addr in all_markets:
             self._maybe_redeem(market_addr)
 
-        # 6. Trade on active markets
-        for market_addr in markets:
+        # 6. Trade only on relevant markets (limit API calls)
+        trade_markets = self._select_trade_markets(all_markets)
+        self._log(f"[{self.agent_id}] Trading on {len(trade_markets)}/{len(all_markets)} markets")
+        for market_addr in trade_markets:
             self._trade_on_market(market_addr, news, db_logger)
+
+    def _select_trade_markets(self, all_markets: list[str], max_markets: int = 20) -> list[str]:
+        """
+        Select which markets to trade on this step.
+        Priority:
+          1. Most recently created markets (last 15)
+          2. Markets with recent DB activity (last 5)
+        Result capped at max_markets to limit API calls.
+        """
+        # Take the most recently created markets (end of the list = newest)
+        recent = all_markets[-15:] if len(all_markets) > 15 else all_markets[:]
+
+        # Add markets with recent trade activity from DB
+        try:
+            import sqlite3, os
+            db_path = os.environ.get("DB_PATH", "data/agora.db")
+            conn = sqlite3.connect(db_path)
+            rows = conn.execute("""
+                SELECT DISTINCT market_id FROM agent_actions
+                ORDER BY timestamp DESC LIMIT 30
+            """).fetchall()
+            conn.close()
+            active_in_db = [r[0] for r in rows]
+        except Exception:
+            active_in_db = []
+
+        # Merge, deduplicate, preserve order (recent first)
+        seen = set()
+        selected = []
+        for addr in list(reversed(recent)) + active_in_db:
+            if addr not in seen:
+                seen.add(addr)
+                selected.append(addr)
+            if len(selected) >= max_markets:
+                break
+
+        return selected
 
     def _maybe_resolve(self, market_address: str, news: list[str]):
         """Resolve a market if it has expired and this agent is the designated resolver."""
