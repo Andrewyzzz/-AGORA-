@@ -12,6 +12,8 @@ import threading
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from web3 import Web3
 from eth_account import Account
 from dotenv import load_dotenv
@@ -56,7 +58,26 @@ AGENT_ADDRS = {
     Account.from_key(os.environ["AGENT_B_PRIVATE_KEY"]).address: "Agent-B",
     Account.from_key(os.environ["AGENT_C_PRIVATE_KEY"]).address: "Agent-C",
 }
-AGENT_MODELS   = {"Agent-A": "Claude Opus", "Agent-B": "GPT-4o", "Agent-C": "DeepSeek"}
+AGENT_MODELS   = {"Agent-A": "GPT-4o #2", "Agent-B": "GPT-4o #1", "Agent-C": "DeepSeek"}
+
+# Only show markets created on/after this date (filter out old bad markets)
+# May 11 2026 00:00 UTC = 1747008000
+MARKET_CUTOFF_TS = 1747054800  # May 11 2026 09:00 UTC
+
+# Keywords that indicate a low-quality/past market
+_BAD_MARKET_KEYWORDS = [
+    "q1 2024", "q2 2024", "q3 2024", "q4 2024",
+    "q1 2025", "q2 2025", "q3 2025", "q4 2025",
+    "january 2024", "february 2024", "march 2024", "april 2024",
+    "may 2024", "june 2024", "july 2024", "august 2024",
+    "september 2024", "october 2024", "november 2024", "december 2024",
+    "january 2025", "february 2025", "march 2025",
+    "before the end of q1", "before q2 2025",
+]
+
+def _is_good_market(question: str) -> bool:
+    q = question.lower()
+    return not any(kw in q for kw in _BAD_MARKET_KEYWORDS)
 AGENT_PERSONAS = {"Agent-A": "Base-rate forecaster", "Agent-B": "Narrative analyst", "Agent-C": "Contrarian trader"}
 
 # ── Cache refresh (runs in background thread every 30s) ────────────────────────
@@ -81,13 +102,16 @@ def _refresh_cache():
         )
         market_abi = load_abi("LMSRMarket")
 
-        # ── Markets ──────────────────────────────────────────────────────────
+        # ── Markets (only show recent ones, filter old bad markets) ──────────
         market_addresses = factory.functions.getAllMarkets().call()
         markets = []
         for addr in market_addresses:
             try:
                 m    = w3.eth.contract(address=Web3.to_checksum_address(addr), abi=market_abi)
                 info = m.functions.getMarketInfo().call()
+                # Filter out low-quality past-event markets
+                if not _is_good_market(info[0]):
+                    continue
                 markets.append({
                     "address":            addr,
                     "question":           info[0],
@@ -330,6 +354,16 @@ def cache_status():
             "markets":      len(_cache["markets"]),
             "agents":       len(_cache["agents"]),
         }
+
+
+# ── Serve built frontend (must be last, catches all non-API routes) ────────────
+_DIST = Path(__file__).parents[1] / "frontend" / "dist"
+if _DIST.exists():
+    app.mount("/assets", StaticFiles(directory=_DIST / "assets"), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        return FileResponse(_DIST / "index.html")
 
 
 if __name__ == "__main__":

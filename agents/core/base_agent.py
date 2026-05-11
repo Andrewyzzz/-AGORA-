@@ -109,12 +109,34 @@ class BaseAgent:
         """
         Select which markets to trade on this step.
         Priority:
-          1. Most recently created markets (last 15)
-          2. Markets with recent DB activity (last 5)
+          1. Markets created on/after May 11 2026 (filter old bad markets)
+          2. Most recently created of those (last 15)
+          3. Markets with recent DB activity (last 5)
         Result capped at max_markets to limit API calls.
         """
+        import time as _time
+        # Bad market keywords — skip markets with past dates in the question
+        BAD_KW = [
+            "q1 2024","q2 2024","q3 2024","q4 2024",
+            "q1 2025","q2 2025","q3 2025","q4 2025",
+            "january 2024","february 2024","march 2024","april 2024",
+            "may 2024","june 2024","july 2024","august 2024",
+            "before the end of q1","before q2 2025",
+        ]
+        def is_good(addr):
+            try:
+                info = self.execution.get_market_info(addr)
+                if info["state"] != 0:
+                    return False  # skip resolved markets
+                q = info["question"].lower()
+                return not any(kw in q for kw in BAD_KW)
+            except Exception:
+                return False
+
+        recent_markets = [a for a in all_markets if is_good(a)]
+
         # Take the most recently created markets (end of the list = newest)
-        recent = all_markets[-15:] if len(all_markets) > 15 else all_markets[:]
+        recent = recent_markets[-15:] if len(recent_markets) > 15 else recent_markets[:]
 
         # Add markets with recent trade activity from DB
         try:
