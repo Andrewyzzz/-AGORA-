@@ -99,7 +99,8 @@ async function fetchCandles() {
   if (!selected.value) return
   try {
     const r = await axios.get(`/api/ohlc?market_id=${selected.value}&interval=${interval.value}`)
-    candles.value = r.data
+    // chartjs-chart-financial requires 'x' not 't'
+    candles.value = r.data.map(d => ({ x: d.t, o: d.o, h: d.h, l: d.l, c: d.c }))
     await nextTick()
     renderChart()
   } catch (e) {
@@ -137,7 +138,11 @@ function renderChart() {
       scales: {
         x: {
           type: 'time',
-          time: { unit: interval.value < 3600 ? 'minute' : 'hour' },
+          time: {
+            unit: interval.value < 3600 ? 'minute' : 'hour',
+            tooltipFormat: 'HH:mm',
+            displayFormats: { minute: 'HH:mm', hour: 'MM/dd HH:mm' },
+          },
           grid: { color: 'rgba(255,255,255,0.04)' },
           ticks: { color: '#8c909f', maxTicksLimit: 8 },
         },
