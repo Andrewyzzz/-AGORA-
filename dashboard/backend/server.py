@@ -196,10 +196,11 @@ def _refresh_cache():
                 "positions":     positions,
             })
 
-        # ── Governance ────────────────────────────────────────────────────────
+        # ── Governance: only fetch the most recent 20 proposals ──────────────
         count = governance.functions.getProposalCount().call()
         gov_list = []
-        for i in range(count):
+        start = max(0, count - 20)
+        for i in range(start, count):
             p  = governance.functions.proposals(i).call()
             vr = governance.functions.getVoteRecords(i).call()
             gov_list.append({
