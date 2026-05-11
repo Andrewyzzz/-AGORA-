@@ -13,10 +13,10 @@ _DEFAULT_MODEL = "deepseek-chat"
 
 
 class DeepSeekBackend(LLMBackend):
-    def __init__(self, system_prompt: str, model: str = _DEFAULT_MODEL):
+    def __init__(self, system_prompt: str, model: str = _DEFAULT_MODEL, api_key: str | None = None):
         super().__init__(model_name=model, system_prompt=system_prompt)
         self.client = OpenAI(
-            api_key=os.environ["DEEPSEEK_API_KEY"],
+            api_key=api_key or os.environ["DEEPSEEK_API_KEY"],
             base_url=_DEEPSEEK_BASE_URL,
         )
 

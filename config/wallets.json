@@ -14,13 +14,13 @@
     },
     "agent_b": {
       "address": "0xc03944B4EAe6b07443b6371d9115279F5662D7E5",
-      "llm_backend": "GPT-4 (OpenAI)",
+      "llm_backend": "GPT-4o (OpenAI)",
       "persona": "Narrative analyst",
       "description": "重视定性推理和地缘政治背景，擅长分析复杂因果链"
     },
     "agent_c": {
       "address": "0x9E179B01B10182f36A518F462785EdbF307417E4",
-      "llm_backend": "DeepSeek (deepseek-chat)",
+      "llm_backend": "DeepSeek (deepseek-chat, key #1)",
       "persona": "Contrarian trader",
       "description": "系统性寻找市场错误定价，逆向交易，质疑共识"
     }
