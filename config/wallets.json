@@ -8,7 +8,7 @@
     },
     "agent_a": {
       "address": "0xDe16426dc978e9A5bD41ee83E6ee4d08a8D4BAa3",
-      "llm_backend": "Claude (Anthropic)",
+      "llm_backend": "GPT-4o (OpenAI, key #2)",
       "persona": "Base-rate forecaster",
       "description": "锚定历史基率，保守更新，抵制叙事驱动推理"
     },

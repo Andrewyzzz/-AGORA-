@@ -9,9 +9,9 @@ from .base import LLMBackend, TradeDecision, ProposalDecision, VoteDecision, Res
 
 
 class OpenAIBackend(LLMBackend):
-    def __init__(self, system_prompt: str, model: str = "gpt-4o"):
+    def __init__(self, system_prompt: str, model: str = "gpt-4o", api_key: str | None = None):
         super().__init__(model_name=model, system_prompt=system_prompt)
-        self.client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        self.client = OpenAI(api_key=api_key or os.environ["OPENAI_API_KEY"])
 
     def _call(self, user_message: str, model_class) -> dict:
         response = self.client.beta.chat.completions.parse(

@@ -31,6 +31,7 @@ console = Console()
 from agents.core.base_agent import BaseAgent
 from agents.llm.openai_backend import OpenAIBackend
 from agents.llm.deepseek_backend import DeepSeekBackend
+
 from agents.prompts.base_rate_agent import SYSTEM_PROMPT as PROMPT_A
 from agents.prompts.narrative_agent import SYSTEM_PROMPT as PROMPT_B
 from agents.prompts.contrarian_agent import SYSTEM_PROMPT as PROMPT_C
@@ -58,15 +59,15 @@ def build_agents(w3: Web3, addresses: dict) -> list[BaseAgent]:
     newsapi_key = os.environ.get("NEWSAPI_KEY")
     agents = []
 
-    # Agent A — DeepSeek #2 — Base-rate forecaster
+    # Agent A — GPT-4o #2 — Base-rate forecaster
     key_a = os.environ.get("AGENT_A_PRIVATE_KEY")
     if key_a:
         agents.append(BaseAgent(
             agent_id="Agent-A",
             private_key=key_a,
-            llm_backend=DeepSeekBackend(
+            llm_backend=OpenAIBackend(
                 system_prompt=PROMPT_A,
-                api_key=os.environ.get("DEEPSEEK_API_KEY_2"),
+                api_key=os.environ.get("OPENAI_API_KEY_2"),
             ),
             w3=w3,
             addresses=addresses,
