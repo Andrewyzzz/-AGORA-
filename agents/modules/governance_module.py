@@ -171,17 +171,20 @@ class GovernanceModule:
         return votes_cast
 
     def try_execute_approved(self) -> list[str]:
-        """Execute any proposals that have passed voting but not yet been executed."""
+        """Execute proposals that passed voting. Only checks recent proposals to avoid spam."""
         count = self.execution.get_proposal_count()
         new_markets = []
 
-        for proposal_id in range(count):
+        # Only scan the most recent 20 proposals — old ones either executed or failed
+        start = max(0, count - 20)
+        for proposal_id in range(start, count):
             try:
                 proposal = self.execution.governance.functions.proposals(proposal_id).call()
                 executed = proposal[8]
                 voting_deadline = proposal[7]
                 votes_for = proposal[5]
                 votes_against = proposal[6]
+                quorum = self.execution.governance.functions.quorum().call()
 
                 if executed:
                     continue
@@ -189,6 +192,8 @@ class GovernanceModule:
                     continue
                 if votes_for <= votes_against:
                     continue
+                if votes_for + votes_against < quorum:
+                    continue  # skip without logging — quorum not met is expected
 
                 result = self.execution.execute_proposal(proposal_id)
                 market_addr = result["receipt"]["logs"][0]["address"] if result["receipt"].get("logs") else ""
