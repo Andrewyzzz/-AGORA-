@@ -29,8 +29,8 @@ class ProposalDecision(BaseModel):
     question: str = Field(description="The binary prediction question")
     resolution_criteria: str = Field(
         description="Precise, unambiguous criteria for YES resolution, including data sources and edge cases")
-    resolution_days: int = Field(ge=1, le=365,
-        description="Days from now until resolution")
+    resolution_days: int = Field(ge=3, le=30,
+        description="Days from now until resolution. Keep between 3-30 days for research purposes.")
     liquidity_parameter: int = Field(ge=50, le=1000,
         description="LMSR liquidity parameter b (higher = deeper market)")
     reasoning: str = Field(description="Why this is a valuable prediction market")

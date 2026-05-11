@@ -55,42 +55,101 @@ class DataModule:
         return prices + [item.to_str() for item in items[:max_items]]
 
     def _fetch_prices(self) -> list[str]:
-        """Fetch real-time prices from CoinGecko and inject as context."""
+        """Fetch real-time market data and inject as structured context."""
+        lines = ["[REAL-TIME MARKET DATA — use these numbers for any price-related predictions]"]
+
+        # ── Crypto: BTC, ETH, SOL (CoinGecko, free) ──────────────────────────
         try:
             resp = requests.get(
                 "https://api.coingecko.com/api/v3/simple/price",
                 params={
-                    "ids": "bitcoin,ethereum,gold",
+                    "ids": "bitcoin,ethereum,solana",
                     "vs_currencies": "usd",
                     "include_24hr_change": "true",
                 },
                 timeout=8,
             )
-            resp.raise_for_status()
             data = resp.json()
-            lines = ["[REAL-TIME MARKET PRICES — use these for any price-related predictions]"]
-            if "bitcoin" in data:
-                p = data["bitcoin"]
-                lines.append(f"BTC/USD: ${p['usd']:,.0f} (24h change: {p.get('usd_24h_change', 0):.1f}%)")
-            if "ethereum" in data:
-                p = data["ethereum"]
-                lines.append(f"ETH/USD: ${p['usd']:,.0f} (24h change: {p.get('usd_24h_change', 0):.1f}%)")
-            if "gold" in data:
-                p = data["gold"]
-                lines.append(f"Gold (XAU/USD): ${p['usd']:,.0f}")
-            # Also try to get DXY from a simple source
-            try:
-                fx = requests.get(
-                    "https://api.frankfurter.app/latest?from=USD&to=EUR,GBP,JPY",
-                    timeout=5,
-                ).json()
-                if "rates" in fx:
-                    lines.append(f"USD/EUR: {fx['rates'].get('EUR', '?')} | USD/GBP: {fx['rates'].get('GBP', '?')}")
-            except Exception:
-                pass
-            return lines
+            for coin_id, label in [("bitcoin","BTC"), ("ethereum","ETH"), ("solana","SOL")]:
+                if coin_id in data:
+                    p = data[coin_id]
+                    lines.append(f"{label}/USD: ${p['usd']:,.2f} (24h: {p.get('usd_24h_change',0):+.1f}%)")
+            # Gold via Yahoo Finance (more reliable)
+
         except Exception:
-            return []
+            pass
+
+        # ── Equities: S&P500, Nasdaq, Dow (Yahoo Finance unofficial) ─────────
+        try:
+            headers = {"User-Agent": "Mozilla/5.0"}
+            for ticker, label in [("^GSPC","S&P500"), ("^IXIC","Nasdaq"), ("^DJI","Dow Jones")]:
+                try:
+                    r = requests.get(
+                        f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}",
+                        headers=headers, timeout=6,
+                        params={"interval":"1d","range":"2d"},
+                    )
+                    result = r.json()["chart"]["result"][0]
+                    price  = result["meta"]["regularMarketPrice"]
+                    prev   = result["meta"]["chartPreviousClose"]
+                    chg    = (price - prev) / prev * 100
+                    lines.append(f"{label}: {price:,.2f} ({chg:+.1f}%)")
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        # ── Commodities: Gold, WTI Oil, Brent Oil (Yahoo Finance) ───────────
+        try:
+            headers = {"User-Agent": "Mozilla/5.0"}
+            for ticker, label in [("GC=F","Gold (XAU/USD)"), ("CL=F","WTI Oil"), ("BZ=F","Brent Oil")]:
+                try:
+                    r = requests.get(
+                        f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}",
+                        headers=headers, timeout=6,
+                        params={"interval":"1d","range":"2d"},
+                    )
+                    result = r.json()["chart"]["result"][0]
+                    price  = result["meta"]["regularMarketPrice"]
+                    prev   = result["meta"]["chartPreviousClose"]
+                    chg    = (price - prev) / prev * 100
+                    unit = "/bbl" if "Oil" in label else "/oz"
+                    lines.append(f"{label}: ${price:,.2f}{unit} ({chg:+.1f}%)")
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        # ── Forex: USD/EUR, USD/JPY (Frankfurter, free) ──────────────────────
+        try:
+            fx = requests.get(
+                "https://api.frankfurter.app/latest?from=USD&to=EUR,JPY,CNY",
+                timeout=5,
+            ).json()
+            if "rates" in fx:
+                r = fx["rates"]
+                lines.append(
+                    f"USD/EUR: {r.get('EUR','?')} | "
+                    f"USD/JPY: {r.get('JPY','?')} | "
+                    f"USD/CNY: {r.get('CNY','?')}"
+                )
+        except Exception:
+            pass
+
+        # ── Fear & Greed Index (Alternative.me, free) ────────────────────────
+        try:
+            fng = requests.get(
+                "https://api.alternative.me/fng/?limit=1",
+                timeout=5,
+            ).json()
+            val = fng["data"][0]
+            lines.append(
+                f"Crypto Fear & Greed Index: {val['value']}/100 — {val['value_classification']}"
+            )
+        except Exception:
+            pass
+
+        return lines if len(lines) > 1 else []
 
     def _fetch_rss(self, feeds: list[str]) -> list[NewsItem]:
         items = []

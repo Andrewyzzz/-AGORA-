@@ -6,6 +6,9 @@ from datetime import datetime, timedelta, timezone
 from agents.modules.decision_module import DecisionModule
 from agents.modules.execution_module import ExecutionModule
 from agents.modules.data_module import DataModule
+from bridge.polymarket import PolymarketBridge
+
+_polymarket = PolymarketBridge()
 
 
 class GovernanceModule:
@@ -23,16 +26,52 @@ class GovernanceModule:
         self.agent_id = agent_id
         self.log = logger
 
+    @staticmethod
+    def _extract_keywords(text: str) -> set[str]:
+        """Extract meaningful keywords for dedup check."""
+        stop = {"will","the","a","an","by","in","on","of","to","is","be","for",
+                "before","after","end","year","2026","2027","officially","formally"}
+        return {w.lower() for w in text.split() if len(w) > 3 and w.lower() not in stop}
+
+    def _is_duplicate(self, question: str, existing_questions: list[str], threshold: float = 0.5) -> bool:
+        """Return True if question is too similar to an existing market."""
+        new_kw = self._extract_keywords(question)
+        if not new_kw:
+            return False
+        for eq in existing_questions:
+            existing_kw = self._extract_keywords(eq)
+            if not existing_kw:
+                continue
+            overlap = len(new_kw & existing_kw) / max(len(new_kw | existing_kw), 1)
+            if overlap >= threshold:
+                return True
+        return False
+
     def maybe_propose(self) -> bool:
-        """Scan news and submit a market proposal if a good opportunity exists."""
-        today = datetime.now(timezone.utc).strftime("%B %d, %Y")
+        """Scan news + Polymarket and submit a market proposal if a good opportunity exists."""
+        now = datetime.now(timezone.utc)
+        today = now.strftime("%B %d, %Y")
+        min_resolution = now + timedelta(days=3)
+
         news = self.data.get_recent_news(20)
-        # Prepend today's date so the agent knows what counts as "future"
         news_with_date = [f"[TODAY IS {today} — only propose markets about FUTURE events]"] + news
+
+        # ── Inject Polymarket reference markets ──────────────────────────────
+        pm_markets = []
+        try:
+            pm_markets = _polymarket.get_recent_markets(limit=10)
+        except Exception:
+            pass
+        if pm_markets:
+            pm_lines = ["[POLYMARKET RECENTLY LISTED MARKETS — use as inspiration, do NOT copy verbatim]"]
+            for m in pm_markets:
+                price_str = f"YES={m['yes_price']*100:.0f}%" if m['yes_price'] else "YES=?"
+                pm_lines.append(f"  [{m['end_date']}] {price_str} vol=${m['volume']:,.0f} | {m['question']}")
+            news_with_date = pm_lines + [""] + news_with_date
 
         existing = self.execution.get_all_markets()
         existing_questions = []
-        for addr in existing[:10]:
+        for addr in existing[:20]:
             try:
                 info = self.execution.get_market_info(addr)
                 existing_questions.append(info["question"])
@@ -42,6 +81,20 @@ class GovernanceModule:
         proposal = self.decision.decide_proposal(news_with_date, existing_questions)
         if not proposal or not proposal.question:
             self.log(f"[{self.agent_id}] No proposal opportunity found.")
+            return False
+
+        # ── Hard date validation: resolution must be at least 3 days in future ──
+        resolution_dt = now + timedelta(days=proposal.resolution_days)
+        if resolution_dt < min_resolution:
+            self.log(
+                f"[{self.agent_id}] Proposal rejected (resolves too soon: "
+                f"{resolution_dt.strftime('%Y-%m-%d')}): '{proposal.question[:50]}'"
+            )
+            return False
+
+        # ── Dedup check ───────────────────────────────────────────────────────
+        if self._is_duplicate(proposal.question, existing_questions):
+            self.log(f"[{self.agent_id}] Proposal rejected (duplicate): '{proposal.question[:50]}'")
             return False
 
         resolution_ts = int(
@@ -84,10 +137,22 @@ class GovernanceModule:
                 ).call():
                     continue
 
+                # Enrich with Polymarket reference price if available
+                proposer_reasoning = proposal[10]
+                try:
+                    pm_ref = _polymarket.search_market(proposal[1][:50])
+                    if pm_ref and pm_ref.yes_price is not None:
+                        proposer_reasoning += (
+                            f"\n[Polymarket reference: similar market prices YES at "
+                            f"{pm_ref.yes_price*100:.0f}% — volume ${pm_ref.volume:,.0f}]"
+                        )
+                except Exception:
+                    pass
+
                 vote_decision = self.decision.decide_vote(
                     question=proposal[1],
                     resolution_criteria=proposal[2],
-                    proposer_reasoning=proposal[10],
+                    proposer_reasoning=proposer_reasoning,
                 )
                 result = self.execution.vote(
                     proposal_id=proposal_id,

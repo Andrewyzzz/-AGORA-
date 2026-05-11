@@ -56,6 +56,63 @@ class PolymarketBridge:
                     return float(price)
         return None
 
+    def get_recent_markets(self, limit: int = 15, min_days_to_resolve: int = 3) -> list[dict]:
+        """
+        Fetch recently listed active Polymarket markets for agent inspiration.
+        Filters out ultra-short-term (intraday) price-up/down markets.
+        Returns markets resolving at least `min_days_to_resolve` days from now.
+        Read-only — no trades placed.
+        """
+        from datetime import datetime, timezone, timedelta
+        cutoff = datetime.now(timezone.utc) + timedelta(days=min_days_to_resolve)
+
+        try:
+            # Fetch more than needed to allow filtering
+            resp = self.session.get(
+                f"{POLYMARKET_GAMMA_API}/markets",
+                params={
+                    "active": "true",
+                    "closed": "false",
+                    "limit": 100,
+                    "order": "volume",      # sort by volume — more liquid = more meaningful
+                    "ascending": "false",
+                    "volume_num_min": 1000, # at least $1k volume
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            markets = resp.json()
+
+            results = []
+            skip_keywords = {"up or down", "above or below", "higher or lower", "price at"}
+            for m in markets:
+                q = m.get("question", "").lower()
+                # Skip intraday price-movement markets
+                if any(kw in q for kw in skip_keywords):
+                    continue
+                # Skip if resolves too soon
+                end_str = m.get("endDate", "")[:10]
+                try:
+                    end_dt = datetime.strptime(end_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                    if end_dt < cutoff:
+                        continue
+                except Exception:
+                    continue
+
+                yes_price = self._get_yes_price(m)
+                results.append({
+                    "question":  m.get("question", ""),
+                    "yes_price": yes_price,
+                    "end_date":  end_str,
+                    "volume":    round(float(m.get("volume", 0)), 0),
+                })
+                if len(results) >= limit:
+                    break
+
+            return results
+        except Exception:
+            return []
+
     def get_price_by_condition_id(self, condition_id: str) -> float | None:
         """Get YES price for a known condition ID."""
         try:
