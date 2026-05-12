@@ -374,6 +374,24 @@ def cache_status():
         }
 
 
+# ── One-time DB migration endpoint (protected by secret token) ────────────────
+import base64, shutil
+
+@app.post("/api/admin/upload-db")
+async def upload_db(payload: dict):
+    token = os.environ.get("ADMIN_TOKEN", "")
+    if not token or payload.get("token") != token:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="Forbidden")
+    db_path = os.environ.get("DB_PATH", str(ROOT / "data" / "agora.db"))
+    data = base64.b64decode(payload["data"])
+    tmp = db_path + ".tmp"
+    with open(tmp, "wb") as f:
+        f.write(data)
+    shutil.move(tmp, db_path)
+    return {"ok": True, "size": len(data)}
+
+
 # ── Serve built frontend (must be last, catches all non-API routes) ────────────
 _DIST = Path(__file__).parents[1] / "frontend" / "dist"
 if _DIST.exists():
