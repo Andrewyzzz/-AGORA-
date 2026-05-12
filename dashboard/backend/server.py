@@ -53,11 +53,15 @@ def get_db():
     db_path = os.environ.get("DB_PATH", str(ROOT / "data" / "agora.db"))
     return sqlite3.connect(db_path)
 
-AGENT_ADDRS = {
-    Account.from_key(os.environ["AGENT_A_PRIVATE_KEY"]).address: "Agent-A",
-    Account.from_key(os.environ["AGENT_B_PRIVATE_KEY"]).address: "Agent-B",
-    Account.from_key(os.environ["AGENT_C_PRIVATE_KEY"]).address: "Agent-C",
-}
+def _addr(key_name):
+    k = os.environ.get(key_name, "")
+    return Account.from_key(k).address if k else None
+
+AGENT_ADDRS = {a: n for a, n in [
+    (_addr("AGENT_A_PRIVATE_KEY"), "Agent-A"),
+    (_addr("AGENT_B_PRIVATE_KEY"), "Agent-B"),
+    (_addr("AGENT_C_PRIVATE_KEY"), "Agent-C"),
+] if a is not None}
 AGENT_MODELS   = {"Agent-A": "GPT-4o #2", "Agent-B": "GPT-4o #1", "Agent-C": "DeepSeek"}
 
 # Only show markets created on/after this date (filter out old bad markets)
