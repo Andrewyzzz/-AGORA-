@@ -117,11 +117,12 @@ class BaseAgent:
         import time as _time
         # Bad market keywords — skip markets with past dates in the question
         BAD_KW = [
-            "q1 2024","q2 2024","q3 2024","q4 2024",
-            "q1 2025","q2 2025","q3 2025","q4 2025",
-            "january 2024","february 2024","march 2024","april 2024",
-            "may 2024","june 2024","july 2024","august 2024",
-            "before the end of q1","before q2 2025",
+            "2024", "2025",
+            "january 2026", "february 2026", "march 2026", "april 2026",
+            "may 1, 2026", "may 2, 2026", "may 3, 2026", "may 4, 2026",
+            "may 5, 2026", "may 6, 2026", "may 7, 2026", "may 8, 2026",
+            "may 9, 2026", "may 10, 2026", "may 11, 2026",
+            "before the end of q1", "before q2",
         ]
         def is_good(addr):
             try:

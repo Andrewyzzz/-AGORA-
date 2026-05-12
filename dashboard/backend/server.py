@@ -66,13 +66,18 @@ MARKET_CUTOFF_TS = 1747054800  # May 11 2026 09:00 UTC
 
 # Keywords that indicate a low-quality/past market
 _BAD_MARKET_KEYWORDS = [
-    "q1 2024", "q2 2024", "q3 2024", "q4 2024",
-    "q1 2025", "q2 2025", "q3 2025", "q4 2025",
-    "january 2024", "february 2024", "march 2024", "april 2024",
-    "may 2024", "june 2024", "july 2024", "august 2024",
-    "september 2024", "october 2024", "november 2024", "december 2024",
-    "january 2025", "february 2025", "march 2025",
-    "before the end of q1", "before q2 2025",
+    # All of 2024
+    "2024",
+    # All of 2025
+    "2025",
+    # Already-passed months in 2026 (today is May 12 2026)
+    "january 2026", "february 2026", "march 2026", "april 2026",
+    # May 2026 dates that have passed
+    "may 1, 2026", "may 2, 2026", "may 3, 2026", "may 4, 2026",
+    "may 5, 2026", "may 6, 2026", "may 7, 2026", "may 8, 2026",
+    "may 9, 2026", "may 10, 2026", "may 11, 2026",
+    # Generic past patterns
+    "before the end of q1", "before q2",
 ]
 
 def _is_good_market(question: str, resolution_ts: int = 0, state: int = 0) -> bool:
