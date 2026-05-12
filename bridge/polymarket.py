@@ -56,6 +56,57 @@ class PolymarketBridge:
                     return float(price)
         return None
 
+    def get_diverse_markets(self, limit: int = 20) -> list[dict]:
+        """
+        Fetch diverse high-volume Polymarket markets across multiple categories.
+        Used to inspire agent proposals with variety beyond news headlines.
+        """
+        from datetime import datetime, timezone, timedelta
+        cutoff = datetime.now(timezone.utc) + timedelta(days=3)
+        categories = [
+            ("politics", "election OR congress OR president OR senate"),
+            ("finance", "federal reserve OR interest rate OR inflation OR GDP"),
+            ("crypto", "bitcoin OR ethereum OR crypto"),
+            ("sports", "championship OR world cup OR tournament OR league"),
+            ("science", "FDA OR vaccine OR climate OR space"),
+            ("geopolitics", "ceasefire OR treaty OR sanctions OR summit"),
+        ]
+        results = []
+        for _, query in categories:
+            try:
+                resp = self.session.get(
+                    f"{POLYMARKET_GAMMA_API}/markets",
+                    params={"active": "true", "closed": "false",
+                            "limit": 5, "order": "volume",
+                            "ascending": "false", "volume_num_min": 5000},
+                    timeout=8,
+                )
+                if resp.status_code != 200:
+                    continue
+                for m in resp.json():
+                    q = m.get("question", "").lower()
+                    if any(kw in q for kw in ["up or down", "above or below"]):
+                        continue
+                    end_str = m.get("endDate", "")[:10]
+                    try:
+                        end_dt = datetime.strptime(end_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                        if end_dt < cutoff:
+                            continue
+                    except Exception:
+                        continue
+                    yes_price = self._get_yes_price(m)
+                    entry = {
+                        "question": m.get("question", ""),
+                        "yes_price": yes_price,
+                        "end_date": end_str,
+                        "volume": round(float(m.get("volume", 0)), 0),
+                    }
+                    if entry not in results:
+                        results.append(entry)
+            except Exception:
+                continue
+        return results[:limit]
+
     def get_recent_markets(self, limit: int = 15, min_days_to_resolve: int = 3) -> list[dict]:
         """
         Fetch recently listed active Polymarket markets for agent inspiration.

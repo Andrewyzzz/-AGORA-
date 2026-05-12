@@ -26,12 +26,26 @@ class GovernanceModule:
         self.agent_id = agent_id
         self.log = logger
 
+    # Topics already overrepresented — block new proposals on these
+    _SATURATED_TOPICS = [
+        "withdraw troops", "withdrawal of troops", "troop withdrawal",
+        "stationed in germany", "stationed in europe",
+        "military strikes on iran", "airstrikes on iran", "strikes against iran",
+        "strikes on iranian", "launch airstrikes", "conduct military strikes",
+        "military conflict in the strait",
+    ]
+
     @staticmethod
     def _extract_keywords(text: str) -> set[str]:
         """Extract meaningful keywords for dedup check."""
         stop = {"will","the","a","an","by","in","on","of","to","is","be","for",
                 "before","after","end","year","2026","2027","officially","formally"}
         return {w.lower() for w in text.split() if len(w) > 3 and w.lower() not in stop}
+
+    def _is_saturated_topic(self, question: str) -> bool:
+        """Return True if this question is about an already overrepresented topic."""
+        q = question.lower()
+        return any(topic in q for topic in self._SATURATED_TOPICS)
 
     def _is_duplicate(self, question: str, existing_questions: list[str], threshold: float = 0.5) -> bool:
         """Return True if question is too similar to an existing market."""
@@ -56,18 +70,29 @@ class GovernanceModule:
         news = self.data.get_recent_news(20)
         news_with_date = [f"[TODAY IS {today} — only propose markets about FUTURE events]"] + news
 
-        # ── Inject Polymarket reference markets ──────────────────────────────
+        # ── Inject diverse Polymarket markets as primary inspiration ─────────
         pm_markets = []
         try:
-            pm_markets = _polymarket.get_recent_markets(limit=10)
+            pm_markets = _polymarket.get_diverse_markets(limit=20)
         except Exception:
-            pass
+            try:
+                pm_markets = _polymarket.get_recent_markets(limit=10)
+            except Exception:
+                pass
+
+        pm_prefix = []
         if pm_markets:
-            pm_lines = ["[POLYMARKET RECENTLY LISTED MARKETS — use as inspiration, do NOT copy verbatim]"]
+            pm_prefix = [
+                "[POLYMARKET HOT MARKETS — these are the most actively traded prediction markets RIGHT NOW]",
+                "[INSTRUCTION: Propose a market INSPIRED by one of these, adapted for AGORA. Cover diverse topics.]",
+                "[DO NOT propose about Iran strikes or US troop withdrawal — those are already overrepresented]",
+            ]
             for m in pm_markets:
                 price_str = f"YES={m['yes_price']*100:.0f}%" if m['yes_price'] else "YES=?"
-                pm_lines.append(f"  [{m['end_date']}] {price_str} vol=${m['volume']:,.0f} | {m['question']}")
-            news_with_date = pm_lines + [""] + news_with_date
+                pm_prefix.append(f"  [{m['end_date']}] {price_str} vol=${m['volume']:,.0f} | {m['question']}")
+            pm_prefix.append("")
+
+        news_with_date = pm_prefix + news_with_date
 
         existing = self.execution.get_all_markets()
         existing_questions = []
@@ -90,6 +115,11 @@ class GovernanceModule:
                 f"[{self.agent_id}] Proposal rejected (resolves too soon: "
                 f"{resolution_dt.strftime('%Y-%m-%d')}): '{proposal.question[:50]}'"
             )
+            return False
+
+        # ── Reject saturated topics ───────────────────────────────────────────
+        if self._is_saturated_topic(proposal.question):
+            self.log(f"[{self.agent_id}] Proposal rejected (saturated topic): '{proposal.question[:50]}'")
             return False
 
         # ── Dedup check ───────────────────────────────────────────────────────
