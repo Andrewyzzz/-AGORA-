@@ -6,7 +6,7 @@
       ← Back to Markets
     </button>
 
-    <div v-if="!market" class="glass-panel p-16 text-center" style="color:var(--color-on-surface-variant)">
+    <div v-if="!market || !market.question" class="glass-panel p-16 text-center" style="color:var(--color-on-surface-variant)">
       Loading…
     </div>
 

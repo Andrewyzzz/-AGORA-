@@ -315,7 +315,7 @@ def get_market_trades(address: str, limit: int = 50):
         SELECT timestamp, agent_id, action_type,
                amount_tokens, price_before, price_after, tx_hash, reasoning
         FROM agent_actions
-        WHERE market_id = ? AND action_type NOT LIKE 'hold%'
+        WHERE LOWER(market_id) = LOWER(?) AND action_type NOT LIKE 'hold%'
         ORDER BY timestamp DESC LIMIT ?
     """, (address, limit)).fetchall()
     db.close()
@@ -336,7 +336,7 @@ def get_market_positions(address: str):
             SUM(CASE WHEN action_type='buy_NO'   THEN amount_tokens ELSE 0 END) -
             SUM(CASE WHEN action_type='sell_NO'  THEN amount_tokens ELSE 0 END) as no_net
         FROM agent_actions
-        WHERE market_id = ? AND action_type NOT LIKE 'hold%'
+        WHERE LOWER(market_id) = LOWER(?) AND action_type NOT LIKE 'hold%'
         GROUP BY agent_id
     """, (address,)).fetchall()
     db.close()
@@ -356,14 +356,14 @@ def get_ohlc(market_id: str, interval: int = 300):
     rows = db.execute("""
         SELECT timestamp, price_before, price_after
         FROM agent_actions
-        WHERE market_id = ? AND price_before IS NOT NULL
+        WHERE LOWER(market_id) = LOWER(?) AND price_before IS NOT NULL
         ORDER BY timestamp ASC
     """, (market_id,)).fetchall()
 
     # Also include market_prices snapshots if available
     price_rows = db.execute("""
         SELECT timestamp, agora_yes_price FROM market_prices
-        WHERE market_id = ? ORDER BY timestamp ASC
+        WHERE LOWER(market_id) = LOWER(?) ORDER BY timestamp ASC
     """, (market_id,)).fetchall()
     db.close()
 
