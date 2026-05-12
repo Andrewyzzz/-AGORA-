@@ -8,8 +8,27 @@
     <h1 class="text-2xl font-bold mb-2" style="font-family: var(--font-headline)">Markets</h1>
     <p class="text-sm mb-8" style="color: var(--color-on-surface-variant)">All prediction markets created by AI agents</p>
 
+    <!-- Filter bar -->
+    <div class="flex gap-2 mb-6">
+      <button @click="filter='active'"
+        class="px-4 py-1.5 rounded-lg text-sm font-medium transition-all"
+        :style="filter==='active' ? {background:'rgba(74,225,118,0.2)',color:'#4ae176',border:'1px solid #4ae176'} : {background:'rgba(255,255,255,0.04)',color:'var(--color-on-surface-variant)'}">
+        Active ({{ markets.filter(m=>m.state==='ACTIVE').length }})
+      </button>
+      <button @click="filter='resolved'"
+        class="px-4 py-1.5 rounded-lg text-sm font-medium transition-all"
+        :style="filter==='resolved' ? {background:'rgba(140,144,159,0.2)',color:'#8c909f',border:'1px solid #8c909f'} : {background:'rgba(255,255,255,0.04)',color:'var(--color-on-surface-variant)'}">
+        Resolved ({{ markets.filter(m=>m.state==='RESOLVED').length }})
+      </button>
+      <button @click="filter='all'"
+        class="px-4 py-1.5 rounded-lg text-sm font-medium transition-all"
+        :style="filter==='all' ? {background:'rgba(77,142,255,0.2)',color:'#adc6ff',border:'1px solid #4d8eff'} : {background:'rgba(255,255,255,0.04)',color:'var(--color-on-surface-variant)'}">
+        All ({{ markets.length }})
+      </button>
+    </div>
+
     <div class="space-y-4">
-      <div v-for="m in markets" :key="m.address"
+      <div v-for="m in filteredMarkets" :key="m.address"
            class="glass-panel p-6 cursor-pointer"
            :class="{ 'glow-secondary': selected?.address === m.address }"
            @click="select(m)">
@@ -84,13 +103,20 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getMarkets } from '../api/client.js'
 import PriceChart from '../components/PriceChart.vue'
 
 const markets  = ref([])
 const selected = ref(null)
+const filter   = ref('active')
 let timer
+
+const filteredMarkets = computed(() => {
+  if (filter.value === 'active')   return markets.value.filter(m => m.state === 'ACTIVE')
+  if (filter.value === 'resolved') return markets.value.filter(m => m.state === 'RESOLVED')
+  return markets.value
+})
 
 function select(m) { selected.value = selected.value?.address === m.address ? null : m }
 

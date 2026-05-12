@@ -75,9 +75,17 @@ _BAD_MARKET_KEYWORDS = [
     "before the end of q1", "before q2 2025",
 ]
 
-def _is_good_market(question: str) -> bool:
+def _is_good_market(question: str, resolution_ts: int = 0, state: int = 0) -> bool:
+    """Filter out low-quality or past markets."""
+    import time
     q = question.lower()
-    return not any(kw in q for kw in _BAD_MARKET_KEYWORDS)
+    # Filter by bad keywords
+    if any(kw in q for kw in _BAD_MARKET_KEYWORDS):
+        return False
+    # Filter ACTIVE markets that have already expired (unresolved stale markets)
+    if state == 0 and resolution_ts > 0 and resolution_ts < time.time():
+        return False
+    return True
 AGENT_PERSONAS = {"Agent-A": "Base-rate forecaster", "Agent-B": "Narrative analyst", "Agent-C": "Contrarian trader"}
 
 # ── Cache refresh (runs in background thread every 30s) ────────────────────────
@@ -109,8 +117,8 @@ def _refresh_cache():
             try:
                 m    = w3.eth.contract(address=Web3.to_checksum_address(addr), abi=market_abi)
                 info = m.functions.getMarketInfo().call()
-                # Filter out low-quality past-event markets
-                if not _is_good_market(info[0]):
+                # Filter out low-quality and past-event markets
+                if not _is_good_market(info[0], info[2], info[9]):
                     continue
                 markets.append({
                     "address":            addr,
