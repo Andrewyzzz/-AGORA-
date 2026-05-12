@@ -308,6 +308,41 @@ def get_trades(limit: int = 50):
         "tx_hash": r[11],
     } for r in rows]
 
+@app.get("/api/markets/{address}/trades")
+def get_market_trades(address: str, limit: int = 50):
+    db   = get_db()
+    rows = db.execute("""
+        SELECT timestamp, agent_id, action_type,
+               amount_tokens, price_before, price_after, tx_hash, reasoning
+        FROM agent_actions
+        WHERE market_id = ? AND action_type NOT LIKE 'hold%'
+        ORDER BY timestamp DESC LIMIT ?
+    """, (address, limit)).fetchall()
+    db.close()
+    return [{
+        "timestamp": r[0], "agent_id": r[1], "action_type": r[2],
+        "amount_tokens": r[3], "price_before": r[4], "price_after": r[5],
+        "tx_hash": r[6], "reasoning": r[7],
+    } for r in rows]
+
+
+@app.get("/api/markets/{address}/positions")
+def get_market_positions(address: str):
+    db   = get_db()
+    rows = db.execute("""
+        SELECT agent_id,
+            SUM(CASE WHEN action_type='buy_YES'  THEN amount_tokens ELSE 0 END) -
+            SUM(CASE WHEN action_type='sell_YES' THEN amount_tokens ELSE 0 END) as yes_net,
+            SUM(CASE WHEN action_type='buy_NO'   THEN amount_tokens ELSE 0 END) -
+            SUM(CASE WHEN action_type='sell_NO'  THEN amount_tokens ELSE 0 END) as no_net
+        FROM agent_actions
+        WHERE market_id = ? AND action_type NOT LIKE 'hold%'
+        GROUP BY agent_id
+    """, (address,)).fetchall()
+    db.close()
+    return [{"agent_id": r[0], "yes_tokens": round(r[1] or 0, 2), "no_tokens": round(r[2] or 0, 2)} for r in rows]
+
+
 @app.get("/api/governance")
 def get_governance():
     with _cache_lock:
