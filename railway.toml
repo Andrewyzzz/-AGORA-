@@ -1,0 +1,11 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "/app/start.sh"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 5
+
+[[mounts]]
+mountPath = "/app/data"

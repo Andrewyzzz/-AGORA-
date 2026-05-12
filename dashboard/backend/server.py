@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parents[2] / ".env")
 
-ROOT = Path(__file__).parents[2]
+ROOT = Path(os.environ.get("AGORA_ROOT", str(Path(__file__).parents[2])))
 WAD = 10 ** 18
 
 app = FastAPI(title="AGORA Dashboard API")
